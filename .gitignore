@@ -1,0 +1,22 @@
+# Build output
+build/
+
+# User config (contains credentials, do not commit)
+config.ini
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.vcxproj
+*.vcxproj.filters
+*.sln
+CMakeSettings.json
+
+# OS
+.DS_Store
+Thumbs.db
