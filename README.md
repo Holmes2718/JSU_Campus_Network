@@ -36,8 +36,8 @@ cmake --build build --config Release
 ```ini
 [Campus]
 SSID=Campus-WiFi            # 学校 WiFi 名称（有线连接可忽略此项）
-Gateway=192.168.254.17      # DrCOM 认证服务器地址（不要改）
-Username=your-account@telecom   # 改成你的校园网账号
+Gateway=192.168.XXX.XX      # DrCOM 学校服务器认证地址（根据自己学校的来）
+Username=your-account@telecom   # 改成你的校园网账号 @后面的是电信，可以改为自己的公司
 Password=your-password          # 改成你的密码
 CheckInterval=10             # 在线时轮询间隔（秒），建议 10~30
 AutoStart=0                  # 是否开机启动：0=否 1=是
