@@ -15,7 +15,21 @@ Windows 原生 C++ 实现的 DrCOM 校园网自动认证工具，以系统托盘
 
 ## 使用教程
 
-### 1. 编译
+### 1. 配置
+
+首次运行程序会自动在同目录生成 `config.ini`，修改其中的账号信息：
+
+```ini
+[Campus]
+SSID=Campus-WiFi            # 学校 WiFi 名称（有线连接可忽略此项）
+Gateway=192.168.XXX.XX      # DrCOM 学校服务器认证地址（根据自己学校的来）
+Username=your-account@telecom   # 改成你的校园网账号 @后面的是电信，可以改为自己的公司
+Password=your-password          # 改成你的密码
+CheckInterval=10             # 在线时轮询间隔（秒），建议 10~30
+AutoStart=0                  # 是否开机启动：0=否 1=是
+```
+
+### 2. 编译
 
 **前置条件**：Visual Studio 2022（含 CMake 组件），或单独安装 CMake + MSVC。
 
