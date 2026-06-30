@@ -39,18 +39,9 @@ AuthResult LoginService::DetectAuthStatus(const Config& config, Logger& logger) 
         return BuildAuthResult(AuthState::Online, L"已经在线");
     }
 
-    // Gateway reachable but "clientip online" not found — could be captive portal.
-    // Double-check by trying an external URL: if external is unreachable,
-    // we're definitely behind a captive portal that needs authentication.
-
-    HttpResponse externalResp = HttpClient::Get(L"www.baidu.com", L"/");
-    if (!externalResp.success) {
-        // External unreachable while gateway works = captive portal = need auth
-        return BuildAuthResult(AuthState::NeedAuth, L"需要认证（检测到认证页面）");
-    }
-
-    // External reachable too — unlikely with DrCOM captive portal, but treat as online
-    return BuildAuthResult(AuthState::Online, L"已经在线");
+    // "clientip online" not found — need to authenticate.
+    // PerformLogin will double-check and return "已经在线" if we're actually online.
+    return BuildAuthResult(AuthState::NeedAuth, L"需要认证");
 }
 
 AuthResult LoginService::PerformLogin(const Config& config, Logger& logger) {
