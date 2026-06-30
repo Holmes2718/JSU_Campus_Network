@@ -74,6 +74,14 @@ AuthResult LoginService::PerformLogin(const Config& config, Logger& logger) {
         return BuildAuthResult(AuthState::Online, L"已经在线");
     }
 
+    // Check for specific error messages from the server
+    if (response.body.find("userid error") != std::string::npos) {
+        return BuildAuthResult(AuthState::Error, L"账号错误，请检查 config.ini 中的 Username");
+    }
+    if (response.body.find("passwd error") != std::string::npos) {
+        return BuildAuthResult(AuthState::Error, L"密码错误，请检查 config.ini 中的 Password");
+    }
+
     // Unexpected — log first 300 chars of response for debugging
     std::string preview = response.body.substr(0, 300);
     // Replace newlines so the log stays single-line
