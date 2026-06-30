@@ -97,9 +97,20 @@ void Monitor::WorkerThread() {
         if (!onTarget) {
             std::wstring statusMsg;
             if (!ssid.empty() && ssid != config.ssid) {
+                // Connected to a WiFi that is NOT the target SSID
                 statusMsg = L"当前SSID: " + ssid + L"（非目标网络），等待进入目标网络...";
+            } else if (!ssid.empty() && ssid == config.ssid) {
+                // Should not happen (would have set onTarget=true), but be defensive
+                statusMsg = L"SSID匹配但网络状态异常，等待...";
             } else if (!reachableError.empty()) {
-                statusMsg = L"DrCOM服务器 " + config.gateway + L" 不可达，等待...";
+                // WiFi not connected (or check failed) AND DrCOM server unreachable
+                if (!wifiError.empty()) {
+                    statusMsg = L"WiFi检测失败(" + wifiError + L")，且DrCOM服务器 "
+                              + config.gateway + L" 不可达，等待...";
+                } else {
+                    statusMsg = L"未连接WiFi，DrCOM服务器 " + config.gateway
+                              + L" 不可达（等待有线网络接入）...";
+                }
             } else {
                 statusMsg = L"未检测到目标网络（SSID或服务器可达性检查均未通过），等待...";
             }
@@ -138,10 +149,9 @@ void Monitor::WorkerThread() {
             m_logger.Log(authResult.message);
         } else if (status.state == AuthState::Online) {
             // Online — log once per transition only
-            static std::wstring lastOnlineMsg;
-            if (status.message != lastOnlineMsg) {
+            if (status.message != m_lastOnlineMsg) {
                 m_logger.Log(status.message);
-                lastOnlineMsg = status.message;
+                m_lastOnlineMsg = status.message;
             }
         } else {
             m_logger.Log(status.message);

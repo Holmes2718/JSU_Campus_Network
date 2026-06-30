@@ -29,4 +29,5 @@ private:
     HANDLE m_wakeEvent;
     WaitableTimer m_timer;
     std::mutex m_configMutex;
+    std::wstring m_lastOnlineMsg;   // suppress duplicate online log entries
 };

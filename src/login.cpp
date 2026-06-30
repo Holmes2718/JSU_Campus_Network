@@ -1,46 +1,9 @@
 #include "login.h"
 #include "http.h"
+#include "util.h"
 #include <windows.h>
 #include <shellapi.h>
-#include <sstream>
 #include <chrono>
-#include <iomanip>
-
-static std::string UrlEncodeComponent(const std::wstring& value) {
-    std::string utf8;
-    if (!value.empty()) {
-        int requiredChars = WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), NULL, 0, NULL, NULL);
-        if (requiredChars > 0) {
-            utf8.resize(requiredChars);
-            WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), utf8.data(), requiredChars, NULL, NULL);
-        }
-    }
-
-    std::ostringstream encoded;
-    encoded << std::hex;
-    for (unsigned char c : utf8) {
-        if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '-' || c == '_' || c == '.' || c == '~') {
-            encoded << c;
-        } else {
-            encoded << '%' << std::uppercase << std::setw(2) << std::setfill('0') << static_cast<int>(c) << std::nouppercase;
-        }
-    }
-    return encoded.str();
-}
-
-static std::wstring ToWide(const std::string& value) {
-    if (value.empty()) {
-        return L"";
-    }
-    int wideSize = MultiByteToWideChar(CP_UTF8, 0, value.c_str(), static_cast<int>(value.size()), NULL, 0);
-    if (wideSize <= 0) {
-        return L"";
-    }
-    std::wstring result;
-    result.resize(wideSize);
-    MultiByteToWideChar(CP_UTF8, 0, value.c_str(), static_cast<int>(value.size()), result.data(), wideSize);
-    return result;
-}
 
 static AuthResult BuildAuthResult(AuthState state, const std::wstring& message) {
     AuthResult result;
@@ -50,7 +13,7 @@ static AuthResult BuildAuthResult(AuthState state, const std::wstring& message) 
 }
 
 static void AppendParameter(std::wstring& query, const std::wstring& key, const std::wstring& value) {
-    query += L"&" + key + L"=" + ToWide(UrlEncodeComponent(value));
+    query += L"&" + key + L"=" + Utf8ToWide(UrlEncode(value));
 }
 
 static bool ParseLoginResponse(const std::string& text, bool& alreadyOnline, bool& success) {
@@ -60,14 +23,14 @@ static bool ParseLoginResponse(const std::string& text, bool& alreadyOnline, boo
 }
 
 AuthResult LoginService::DetectAuthStatus(const Config& config, Logger& logger) {
-    // Strategy: GET the gateway root page and check for "clientip online" marker.
-    // This matches the Python approach — let the DrCOM server tell us the state.
+    // GET the gateway root page — if it contains "clientip online" we're already authenticated.
+    // This matches the Python reference: "clientip online" in text → already online.
 
     std::wstring path = L"/";
     HttpResponse getResponse = HttpClient::Get(config.gateway, path);
     if (!getResponse.success) {
-        logger.Log(L"HTTP GET 网关失败: " + getResponse.errorMessage);
-        return BuildAuthResult(AuthState::NeedAuth, L"无法到达网关");
+        logger.Log(L"HTTP GET 请求失败: " + getResponse.errorMessage);
+        return BuildAuthResult(AuthState::Error, L"无法连接认证服务器");
     }
 
     // Check for "clientip online" — same logic as Python:
@@ -78,8 +41,8 @@ AuthResult LoginService::DetectAuthStatus(const Config& config, Logger& logger) 
 
     // Gateway reachable but "clientip online" not found — could be captive portal.
     // Double-check by trying an external URL: if external is unreachable,
-    // we're definitely behind a captive portal.
-    logger.Log(L"网关可达但未检测到在线状态，验证外网连通性...");
+    // we're definitely behind a captive portal that needs authentication.
+    logger.Log(L"认证服务器可达但未检测到在线状态，验证外网连通性...");
 
     HttpResponse externalResp = HttpClient::Get(L"www.baidu.com", L"/");
     if (!externalResp.success) {

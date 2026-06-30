@@ -9,6 +9,19 @@
 #pragma comment(lib, "Iphlpapi.lib")
 #pragma comment(lib, "Ws2_32.lib")
 
+namespace {
+    struct WinsockInit {
+        WinsockInit() {
+            WSADATA wsaData;
+            WSAStartup(MAKEWORD(2, 2), &wsaData);
+        }
+        ~WinsockInit() {
+            WSACleanup();
+        }
+    };
+    static WinsockInit g_winsockInit;
+}
+
 bool Network::GetDefaultGateway(std::wstring& gateway, std::wstring& errorMessage) {
     gateway.clear();
     errorMessage.clear();

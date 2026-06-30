@@ -1,21 +1,7 @@
 #include "logger.h"
+#include "util.h"
 #include <filesystem>
 #include <windows.h>
-#include <sstream>
-
-static std::string WideToUtf8(const std::wstring& value) {
-    if (value.empty()) {
-        return std::string();
-    }
-    int sizeNeeded = WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), NULL, 0, NULL, NULL);
-    if (sizeNeeded <= 0) {
-        return std::string();
-    }
-    std::string utf8;
-    utf8.resize(sizeNeeded);
-    WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), utf8.data(), sizeNeeded, NULL, NULL);
-    return utf8;
-}
 
 Logger::Logger(const std::wstring& folderPath)
     : m_folderPath(folderPath) {

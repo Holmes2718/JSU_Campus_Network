@@ -1,32 +1,9 @@
 #include "http.h"
+#include "util.h"
 #include <windows.h>
 #include <winhttp.h>
 #include <string>
 #include <vector>
-#include <sstream>
-
-static std::wstring WideStringToUtf16(const std::wstring& value) {
-    return value;
-}
-
-static std::string UrlEncode(const std::wstring& value) {
-    std::string utf8;
-    if (!value.empty()) {
-        int requiredChars = WideCharToMultiByte(CP_UTF8, 0, value.data(), (int)value.size(), NULL, 0, NULL, NULL);
-        utf8.resize(requiredChars);
-        WideCharToMultiByte(CP_UTF8, 0, value.data(), (int)value.size(), utf8.data(), requiredChars, NULL, NULL);
-    }
-
-    std::ostringstream encoded;
-    for (unsigned char c : utf8) {
-        if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '-' || c == '_' || c == '.' || c == '~') {
-            encoded << c;
-        } else {
-            encoded << '%' << std::uppercase << std::hex << (int)c << std::nouppercase;
-        }
-    }
-    return encoded.str();
-}
 
 static HttpResponse PerformRequest(const std::wstring& host, const std::wstring& path, bool useHead) {
     HttpResponse response;
