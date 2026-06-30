@@ -18,6 +18,7 @@ struct AuthResult {
 
 class LoginService {
 public:
-    static AuthResult DetectAuthStatus(const Config& config, Logger& logger);
+    // Perform login, or detect online status if already logged in.
+    // Returns Online ("已经在线" / "登录成功") or Error ("登录失败").
     static AuthResult PerformLogin(const Config& config, Logger& logger);
 };

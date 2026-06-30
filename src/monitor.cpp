@@ -141,20 +141,17 @@ void Monitor::WorkerThread() {
             lastStatusMsg.clear();
         }
 
-        // Detect auth status (GET page + check "clientip online")
-        AuthResult status = LoginService::DetectAuthStatus(config, m_logger);
-        if (status.state == AuthState::NeedAuth) {
-            m_logger.Log(L"检测到需要认证，开始登录...");
-            AuthResult authResult = LoginService::PerformLogin(config, m_logger);
-            m_logger.Log(authResult.message);
-        } else if (status.state == AuthState::Online) {
-            // Online — log once per transition only
-            if (status.message != m_lastOnlineMsg) {
-                m_logger.Log(status.message);
-                m_lastOnlineMsg = status.message;
+        // Check auth status via login endpoint (the most reliable way).
+        // PerformLogin serves as both detection and login:
+        //   "已经在线" / "登录成功" → online,  "登录失败" → need retry
+        AuthResult authResult = LoginService::PerformLogin(config, m_logger);
+        if (authResult.state == AuthState::Online) {
+            if (authResult.message != m_lastOnlineMsg) {
+                m_logger.Log(authResult.message);
+                m_lastOnlineMsg = authResult.message;
             }
         } else {
-            m_logger.Log(status.message);
+            m_logger.Log(authResult.message);
         }
 
         if (m_immediateAuth.exchange(false)) {

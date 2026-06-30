@@ -22,28 +22,6 @@ static bool ParseLoginResponse(const std::string& text, bool& alreadyOnline, boo
     return alreadyOnline || success;
 }
 
-AuthResult LoginService::DetectAuthStatus(const Config& config, Logger& logger) {
-    // GET the gateway root page — if it contains "clientip online" we're already authenticated.
-    // This matches the Python reference: "clientip online" in text → already online.
-
-    std::wstring path = L"/";
-    HttpResponse getResponse = HttpClient::Get(config.gateway, path);
-    if (!getResponse.success) {
-        logger.Log(L"HTTP GET 请求失败: " + getResponse.errorMessage);
-        return BuildAuthResult(AuthState::Error, L"无法连接认证服务器");
-    }
-
-    // Check for "clientip online" — same logic as Python:
-    //   if "clientip online" in text: print("已经在线")
-    if (getResponse.body.find("clientip online") != std::string::npos) {
-        return BuildAuthResult(AuthState::Online, L"已经在线");
-    }
-
-    // "clientip online" not found — need to authenticate.
-    // PerformLogin will double-check and return "已经在线" if we're actually online.
-    return BuildAuthResult(AuthState::NeedAuth, L"需要认证");
-}
-
 AuthResult LoginService::PerformLogin(const Config& config, Logger& logger) {
     logger.Log(L"使用静默认证方式，不会自动打开浏览器");
 
