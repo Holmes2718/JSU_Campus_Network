@@ -42,7 +42,6 @@ AuthResult LoginService::DetectAuthStatus(const Config& config, Logger& logger) 
     // Gateway reachable but "clientip online" not found — could be captive portal.
     // Double-check by trying an external URL: if external is unreachable,
     // we're definitely behind a captive portal that needs authentication.
-    logger.Log(L"认证服务器可达但未检测到在线状态，验证外网连通性...");
 
     HttpResponse externalResp = HttpClient::Get(L"www.baidu.com", L"/");
     if (!externalResp.success) {
@@ -51,7 +50,7 @@ AuthResult LoginService::DetectAuthStatus(const Config& config, Logger& logger) 
     }
 
     // External reachable too — unlikely with DrCOM captive portal, but treat as online
-    return BuildAuthResult(AuthState::Online, L"网关和外网均可达，认为在线");
+    return BuildAuthResult(AuthState::Online, L"已经在线");
 }
 
 AuthResult LoginService::PerformLogin(const Config& config, Logger& logger) {
