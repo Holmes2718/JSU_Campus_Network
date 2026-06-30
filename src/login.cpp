@@ -4,6 +4,8 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <chrono>
+#include <algorithm>
+#include <cctype>
 
 static AuthResult BuildAuthResult(AuthState state, const std::wstring& message) {
     AuthResult result;
@@ -16,15 +18,36 @@ static void AppendParameter(std::wstring& query, const std::wstring& key, const 
     query += L"&" + key + L"=" + Utf8ToWide(UrlEncode(value));
 }
 
-static bool ParseLoginResponse(const std::string& text, bool& alreadyOnline, bool& success) {
-    alreadyOnline = text.find("clientip online") != std::string::npos;
-    success = text.find("\"result\":1") != std::string::npos;
+// Case-insensitive substring search (ASCII only — sufficient for DrCOM response markers)
+static bool ContainsIgnoreCase(const std::string& haystack, const std::string& needle) {
+    if (needle.empty()) return false;
+    auto it = std::search(haystack.begin(), haystack.end(),
+        needle.begin(), needle.end(),
+        [](char a, char b) { return std::tolower(static_cast<unsigned char>(a))
+                                   == std::tolower(static_cast<unsigned char>(b)); });
+    return it != haystack.end();
+}
+
+// DrCOM servers return varied responses across versions / languages.
+// Check every known marker for "already online" and "login success".
+static bool ParseLoginResponse(const std::string& body, bool& alreadyOnline, bool& success) {
+    // ---- Login success ----
+    success = body.find("\"result\":1") != std::string::npos
+           || body.find("\"result\":\"1\"") != std::string::npos;
+
+    // ---- Already online (multiple languages / formats) ----
+    alreadyOnline = ContainsIgnoreCase(body, "clientip online")
+                 || ContainsIgnoreCase(body, "client online")
+                 || ContainsIgnoreCase(body, "already online")
+                 || body.find("已经在线") != std::string::npos
+                 || body.find("在线") != std::string::npos
+                 || body.find("您已经") != std::string::npos   // "您已经在线了" etc.
+                 || body.find("已登录") != std::string::npos;
+
     return alreadyOnline || success;
 }
 
 AuthResult LoginService::PerformLogin(const Config& config, Logger& logger) {
-    logger.Log(L"使用静默认证方式，不会自动打开浏览器");
-
     std::wstring query = L"/drcom/login?callback=dr1003";
     AppendParameter(query, L"DDDDD", config.username);
     AppendParameter(query, L"upass", config.password);
@@ -36,8 +59,8 @@ AuthResult LoginService::PerformLogin(const Config& config, Logger& logger) {
 
     HttpResponse response = HttpClient::Get(config.gateway, query);
     if (!response.success) {
-        logger.Log(L"登录请求失败: " + response.errorMessage);
-        return BuildAuthResult(AuthState::Error, L"登录请求失败");
+        logger.Log(L"HTTP 请求失败: " + response.errorMessage);
+        return BuildAuthResult(AuthState::Error, L"网络错误");
     }
 
     bool alreadyOnline = false;
@@ -51,5 +74,11 @@ AuthResult LoginService::PerformLogin(const Config& config, Logger& logger) {
         return BuildAuthResult(AuthState::Online, L"已经在线");
     }
 
-    return BuildAuthResult(AuthState::Error, L"登录失败");
+    // Unexpected — log first 300 chars of response for debugging
+    std::string preview = response.body.substr(0, 300);
+    // Replace newlines so the log stays single-line
+    std::replace(preview.begin(), preview.end(), '\r', ' ');
+    std::replace(preview.begin(), preview.end(), '\n', ' ');
+    logger.Log(L"未识别的响应: " + Utf8ToWide(preview));
+    return BuildAuthResult(AuthState::Error, L"登录失败（响应未识别）");
 }
