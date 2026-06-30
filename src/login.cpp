@@ -6,6 +6,7 @@
 #include <chrono>
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 
 static AuthResult BuildAuthResult(AuthState state, const std::wstring& message) {
     AuthResult result;
@@ -18,33 +19,54 @@ static void AppendParameter(std::wstring& query, const std::wstring& key, const 
     query += L"&" + key + L"=" + Utf8ToWide(UrlEncode(value));
 }
 
-// Case-insensitive substring search (ASCII only — sufficient for DrCOM response markers)
-static bool ContainsIgnoreCase(const std::string& haystack, const std::string& needle) {
-    if (needle.empty()) return false;
-    auto it = std::search(haystack.begin(), haystack.end(),
-        needle.begin(), needle.end(),
-        [](char a, char b) { return std::tolower(static_cast<unsigned char>(a))
-                                   == std::tolower(static_cast<unsigned char>(b)); });
-    return it != haystack.end();
+// Extract the integer value of the "result" field from DrCOM JSONP response.
+// Response format: dr1003({"result":1,...})
+// Returns -1 if the field is not found or unparseable.
+static int ExtractResult(const std::string& body) {
+    const char marker[] = "\"result\":";
+    auto pos = body.find(marker);
+    if (pos == std::string::npos) return -1;
+    pos += sizeof(marker) - 1;
+    // skip whitespace
+    while (pos < body.size() && (body[pos] == ' ' || body[pos] == '\t')) ++pos;
+    if (pos >= body.size()) return -1;
+    // handle both number and quoted-string: 1  or  "1"
+    if (body[pos] == '"') {
+        ++pos;
+        if (pos >= body.size()) return -1;
+        int val = 0;
+        while (pos < body.size() && body[pos] >= '0' && body[pos] <= '9') {
+            val = val * 10 + (body[pos] - '0');
+            ++pos;
+        }
+        return val;
+    }
+    if (body[pos] >= '0' && body[pos] <= '9') {
+        int val = 0;
+        while (pos < body.size() && body[pos] >= '0' && body[pos] <= '9') {
+            val = val * 10 + (body[pos] - '0');
+            ++pos;
+        }
+        return val;
+    }
+    return -1;
 }
 
-// DrCOM servers return varied responses across versions / languages.
-// Check every known marker for "already online" and "login success".
-static bool ParseLoginResponse(const std::string& body, bool& alreadyOnline, bool& success) {
-    // ---- Login success ----
-    success = body.find("\"result\":1") != std::string::npos
-           || body.find("\"result\":\"1\"") != std::string::npos;
+// Check whether the body indicates "already online" via text markers.
+// Used as fallback when result != 1 but the user might already be logged in.
+static bool ContainsAlreadyOnline(const std::string& body) {
+    // Build a lowercase copy for case-insensitive search
+    std::string lower = body;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
-    // ---- Already online (multiple languages / formats) ----
-    alreadyOnline = ContainsIgnoreCase(body, "clientip online")
-                 || ContainsIgnoreCase(body, "client online")
-                 || ContainsIgnoreCase(body, "already online")
-                 || body.find("已经在线") != std::string::npos
-                 || body.find("在线") != std::string::npos
-                 || body.find("您已经") != std::string::npos   // "您已经在线了" etc.
-                 || body.find("已登录") != std::string::npos;
-
-    return alreadyOnline || success;
+    return lower.find("clientip online") != std::string::npos
+        || lower.find("client online")  != std::string::npos
+        || lower.find("already online") != std::string::npos
+        || body.find("已经在线") != std::string::npos
+        || body.find("在线") != std::string::npos
+        || body.find("您已经") != std::string::npos
+        || body.find("已登录") != std::string::npos;
 }
 
 AuthResult LoginService::PerformLogin(const Config& config, Logger& logger) {
@@ -63,28 +85,45 @@ AuthResult LoginService::PerformLogin(const Config& config, Logger& logger) {
         return BuildAuthResult(AuthState::Error, L"网络错误");
     }
 
-    bool alreadyOnline = false;
-    bool success = false;
-    ParseLoginResponse(response.body, alreadyOnline, success);
+    // ── Primary: parse the structured JSONP response ──
+    int resultVal = ExtractResult(response.body);
 
-    if (success) {
-        return BuildAuthResult(AuthState::Online, L"登录成功");
-    }
-    if (alreadyOnline) {
+    if (resultVal == 1) {
+        // result=1 means the server accepted the request:
+        // either login succeeded or we were already logged in.
         return BuildAuthResult(AuthState::Online, L"已经在线");
     }
 
-    // Check for specific error messages from the server
-    if (response.body.find("userid error") != std::string::npos) {
-        return BuildAuthResult(AuthState::Error, L"账号错误，请检查 config.ini 中的 Username");
-    }
-    if (response.body.find("passwd error") != std::string::npos) {
-        return BuildAuthResult(AuthState::Error, L"密码错误，请检查 config.ini 中的 Password");
+    if (resultVal == 0) {
+        // result=0 means the request was rejected.
+        // Check for known error codes in the message.
+        if (response.body.find("userid error") != std::string::npos) {
+            return BuildAuthResult(AuthState::Error, L"账号错误，请检查 config.ini 中的 Username");
+        }
+        if (response.body.find("passwd error") != std::string::npos) {
+            return BuildAuthResult(AuthState::Error, L"密码错误，请检查 config.ini 中的 Password");
+        }
+
+        // Even with result=0, the body may contain "already online" text.
+        if (ContainsAlreadyOnline(response.body)) {
+            return BuildAuthResult(AuthState::Online, L"已经在线");
+        }
+
+        // Unknown rejection reason — log the response for diagnostics.
+        std::string preview = response.body.substr(0, 300);
+        std::replace(preview.begin(), preview.end(), '\r', ' ');
+        std::replace(preview.begin(), preview.end(), '\n', ' ');
+        logger.Log(L"服务器拒绝: " + Utf8ToWide(preview));
+        return BuildAuthResult(AuthState::Error, L"登录失败（服务器返回 result=0）");
     }
 
-    // Unexpected — log first 300 chars of response for debugging
+    // ── Fallback: could not parse result field ──
+    // (older / non-standard DrCOM versions that don't return JSONP)
+    if (ContainsAlreadyOnline(response.body)) {
+        return BuildAuthResult(AuthState::Online, L"已经在线");
+    }
+
     std::string preview = response.body.substr(0, 300);
-    // Replace newlines so the log stays single-line
     std::replace(preview.begin(), preview.end(), '\r', ' ');
     std::replace(preview.begin(), preview.end(), '\n', ' ');
     logger.Log(L"未识别的响应: " + Utf8ToWide(preview));
